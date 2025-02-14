@@ -2,6 +2,15 @@
 
 ## Quick Start Guide
 
+### Running the Script
+1. **Edit Inputs:** Open the script file with Notepad and modify the input values at the top, such as `v_start`, `v_end`, and duration values in milliseconds.
+2. **Run the Script:** Open a terminal, navigate to the script directory, and execute:
+   ```bash
+   python3 func_gen_laser.py
+   ```
+3. **View the Output:** The script will plot the waveform.
+4. **Close the Plot:** **Make sure to close the plot window to proceed with deploying the waveform. If you do not close the plot, the waveform will NOT deploy.**
+
 ### Physical Setup of Red Pitaya
 Before running the script, ensure the following physical connections are made:
 - **SD Card:** Must be inserted into the Red Pitaya.
@@ -31,6 +40,7 @@ slope_up_ms = 6  # Duration of the upward slope
 slope_down_ms = 0  # Duration of the downward slope
 end_v_ms = 500  # Duration at the end voltage
 ```
+
 
 ## Requirements
 - **Python 3.x** installed on your system
