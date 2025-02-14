@@ -1,0 +1,8 @@
+v_start=0
+v_end=1
+v_down_end=1
+start_v_ms=20
+slope_up_ms=6
+slope_down_ms=0
+end_v_ms=500
+rp_ip=rp-f0cbc6.local
