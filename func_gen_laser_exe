@@ -1,0 +1,86 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from redpitaya_scpi import scpi
+import time
+
+# Function to read inputs from a text file
+def read_inputs(filename):
+    inputs = {}
+    with open(filename, 'r') as file:
+        for line in file:
+            key, value = line.strip().split('=')
+            try:
+                inputs[key] = float(value) if '.' in value or value.isdigit() else value
+            except ValueError:
+                inputs[key] = value  # Keep strings as is
+    return inputs
+
+# Read inputs
+input_file = "input.txt"
+params = read_inputs(input_file)
+
+# Assign input values
+v_start = params.get("v_start", 0)
+v_end = params.get("v_end", 1)
+v_down_end = params.get("v_down_end", v_end)
+
+start_v_ms = params.get("start_v_ms", 20)
+slope_up_ms = params.get("slope_up_ms", 6)
+slope_down_ms = params.get("slope_down_ms", 0)
+end_v_ms = params.get("end_v_ms", 500)
+
+rp_ip = params.get("rp_ip", "rp-f0cbc6.local")
+
+# Convert milliseconds to seconds
+start_v_seconds = start_v_ms / 1000 
+slope_up_seconds = slope_up_ms / 1000 
+slope_down_seconds = slope_down_ms / 1000 
+end_v_seconds = end_v_ms / 1000 
+
+sampling_rate = 1000  # Samples per second
+num_samples = 16384  # Length of one period of the custom signal
+total_time = start_v_seconds + slope_up_seconds + slope_down_seconds + end_v_seconds 
+frequency = 1 / total_time  # Calculate frequency
+
+t_waveform = np.linspace(0, total_time, num_samples)
+
+# Generate waveform
+waveform = np.piecewise(t_waveform, 
+    [t_waveform < start_v_seconds, 
+     (t_waveform >= start_v_seconds) & (t_waveform < start_v_seconds + slope_up_seconds), 
+     (t_waveform >= start_v_seconds + slope_up_seconds) & (t_waveform < start_v_seconds + slope_up_seconds + slope_down_seconds),
+     t_waveform >= start_v_seconds + slope_up_seconds + slope_down_seconds], 
+    [lambda t: v_start,  
+     lambda t: v_start + (v_end - v_start) * ((t - start_v_seconds) / slope_up_seconds) if slope_up_seconds else v_end,  
+     lambda t: v_end + (v_down_end - v_end) * ((t - start_v_seconds - slope_up_seconds) / slope_down_seconds) if slope_down_seconds else v_down_end,  
+     lambda t: v_down_end])
+
+# Plot waveform
+plt.figure()
+plt.plot(t_waveform, waveform, linewidth=1.5, label='Waveform')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.title('Generated Waveform')
+plt.legend()
+plt.grid()
+plt.show()
+
+# Red Pitaya configuration
+rp = scpi(rp_ip)
+print("Initialized Red Pitaya connection")
+
+# Reset generator
+rp.tx_txt("GEN:RST")
+
+# Deploy waveform
+rp.tx_txt("SOUR1:FUNC ARBITRARY")
+rp.tx_txt("SOUR1:TRAC:DATA:DATA " + ",".join(map(str, waveform)))
+rp.tx_txt(f"SOUR1:FREQ:FIX {frequency}")  # Set frequency
+rp.tx_txt("SOUR1:VOLT:OFFS 0")  # Ensure offset
+rp.tx_txt("OUTPUT1:STATE ON")  # Turn on output
+rp.tx_txt("SOUR1:TRIG:INT")
+print("Waveform deployed to Red Pitaya.")
+
+# Close connection
+rp.close()
+print("Execution completed.")
