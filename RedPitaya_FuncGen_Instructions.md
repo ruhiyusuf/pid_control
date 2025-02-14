@@ -11,7 +11,9 @@ Before running the script, ensure the following physical connections are made:
 
 **Images of the setup:**
 
-![Red Pitaya Physical Setup - Front View](RedPitaya_PhysicalSetup.jpg)
+
+<img src="RedPitaya_PhysicalSetup.jpg" alt="Red Pitaya Physical Setup - Front View" width="300">
+
 
 ## Configuring Inputs
 Before running the script, modify the input parameters at the top of the script:
