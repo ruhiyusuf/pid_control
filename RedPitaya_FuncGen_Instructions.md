@@ -16,7 +16,7 @@ Before running the script, ensure the following physical connections are made:
 ## Configuring Inputs
 Before running the script, modify the input parameters at the top of the script:
 
-![Code Parameters](CodeParameters.jpg)
+![Code Parameters](CodeParameters.png)
 
 ```python
 # Input parameters for the waveform
