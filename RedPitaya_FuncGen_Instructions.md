@@ -4,14 +4,19 @@
 
 ### Running the Script
 **Note:** When connecting to the Red Pitaya for the first time, wait **30 seconds** before running the Python command to ensure proper initialization.
-1. **Edit Inputs:** Open the script file with Notepad and modify the input values at the top, such as `v_start`, `v_end`, and duration values in milliseconds.
-2. **Run the Script:** Open a terminal, navigate to the script directory, and execute:
+1. **Go to Terminal:** Open a terminal on your computer.
+2. **Navigate to the Script Directory:** Use the following command to go to the folder where the script is stored:
+   ```bash
+   cd Desktop/RedPitayaFuncGen
+   ```
+3. **Edit Inputs:** Open the `func_gen_laser.py` with Notepad and modify the input values at the top, such as `v_start`, `v_end`, and duration values in milliseconds.
+4. **Run the Script:** Open a terminal, navigate to the script directory, and execute:
    ```bash
    python3 func_gen_laser.py
    ```
-3. **View the Output:** The script will plot the waveform.
-4. **Close the Plot:** **Make sure to close the plot window to proceed with deploying the waveform. If you do not close the plot, the waveform will NOT deploy.**
-5. **Success Message:** Once the script successfully deploys the waveform, it will display:
+5. **View the Output:** The script will plot the waveform.
+6. **Close the Plot:** **Make sure to close the plot window to proceed with deploying the waveform. If you do not close the plot, the waveform will NOT deploy.**
+7. **Success Message:** Once the script successfully deploys the waveform, it will display:
    ```
    Custom waveform deployed to Red Pitaya
    ```
