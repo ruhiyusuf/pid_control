@@ -71,6 +71,7 @@ def update_parameters():
         else:
             params[key] = float(dpg.get_value(key))
     plot_waveform()
+    deploy_waveform()  # Auto-deploy whenever parameters are updated
 
 def update_increments():
     for key in increments:
@@ -101,8 +102,7 @@ with dpg.window(label="Waveform Generator", width=1000, height=800):
                     dpg.add_text(key.replace("_", " ").title())
                     dpg.add_input_float(tag=key, default_value=params[key], step=increments[key], callback=update_parameters)
                     dpg.add_input_float(tag=f"inc_{key}", default_value=increments[key], callback=update_increments)
-    dpg.add_input_text(label="Red Pitaya IP", tag="rp_ip", default_value=params["rp_ip"])
-    dpg.add_button(label="Deploy to Red Pitaya", callback=deploy_waveform)
+    dpg.add_input_text(label="Red Pitaya IP", tag="rp_ip", default_value=params["rp_ip"], callback=update_parameters)
     dpg.add_text("", tag="status_text")
     with dpg.plot(label="Waveform Plot", height=300, width=500):
         dpg.add_plot_axis(dpg.mvXAxis, label="Time (s)", tag="x_axis")
@@ -111,14 +111,6 @@ with dpg.window(label="Waveform Generator", width=1000, height=800):
         dpg.add_plot_legend()
         dpg.set_axis_limits_auto("x_axis")
         dpg.set_axis_limits_auto("y_axis")
-    dpg.add_button(label="Zoom In", callback=lambda: (
-        dpg.set_axis_limits("x_axis", *[lim * 0.8 for lim in dpg.get_axis_limits("x_axis")]),
-        dpg.set_axis_limits("y_axis", *[lim * 0.8 for lim in dpg.get_axis_limits("y_axis")])
-    ))
-    dpg.add_button(label="Zoom Out", callback=lambda: (
-        dpg.set_axis_limits("x_axis", *[lim * 1.2 for lim in dpg.get_axis_limits("x_axis")]),
-        dpg.set_axis_limits("y_axis", *[lim * 1.2 for lim in dpg.get_axis_limits("y_axis")])
-    ))
 
 dpg.create_viewport(title='Red Pitaya Waveform Editor', width=1000, height=800)
 dpg.setup_dearpygui()
