@@ -15,6 +15,9 @@ params = {
     "rp_ip": "rp-f0cbc6.local"
 }
 
+# Default increments for each parameter
+increments = {key: 0.1 for key in params if key != "rp_ip"}
+
 def generate_waveform():
     start_v_seconds = params["start_v_ms"] / 1000
     slope_up_seconds = params["slope_up_ms"] / 1000
@@ -58,7 +61,7 @@ def deploy_waveform():
         rp.close()
         dpg.set_value("status_text", "Waveform deployed to Red Pitaya")
     except OSError as e:
-        dpg.set_value("status_text", "Error: Red Pitaya not reachable. Wait 20-30s and retry.")
+        dpg.set_value("status_text", "Error: Red Pitaya not reachable. Make sure it is properly connected, and wait 20-30s and retry.")
         print("OSError:", e)
 
 def update_parameters():
@@ -69,14 +72,36 @@ def update_parameters():
             params[key] = float(dpg.get_value(key))
     plot_waveform()
 
-dpg.create_context()
+def update_increments():
+    for key in increments:
+        increments[key] = float(dpg.get_value(f"inc_{key}"))
+        dpg.configure_item(key, step=increments[key])
 
-with dpg.window(label="Waveform Generator", width=700, height=600):
-    for key in params:
-        if key == "rp_ip":
-            dpg.add_input_text(label="Red Pitaya IP", tag=key, default_value=params[key])
-        else:
-            dpg.add_input_float(label=key.replace("_", " ").title(), tag=key, default_value=float(params[key]), callback=update_parameters)
+dpg.create_context()
+dpg.set_global_font_scale(1.2)
+
+with dpg.window(label="Waveform Generator", width=1000, height=800):
+    with dpg.collapsing_header(label="Voltage Values"):
+        with dpg.table(header_row=True):
+            dpg.add_table_column(label="Parameter")
+            dpg.add_table_column(label="Value")
+            dpg.add_table_column(label="Increment")
+            for key in ["v_start", "v_end", "v_down_end"]:
+                with dpg.table_row():
+                    dpg.add_text(key.replace("_", " ").title())
+                    dpg.add_input_float(tag=key, default_value=params[key], step=increments[key], callback=update_parameters)
+                    dpg.add_input_float(tag=f"inc_{key}", default_value=increments[key], callback=update_increments)
+    with dpg.collapsing_header(label="Duration"):
+        with dpg.table(header_row=True):
+            dpg.add_table_column(label="Parameter")
+            dpg.add_table_column(label="Value")
+            dpg.add_table_column(label="Increment")
+            for key in ["start_v_ms", "slope_up_ms", "slope_down_ms", "end_v_ms"]:
+                with dpg.table_row():
+                    dpg.add_text(key.replace("_", " ").title())
+                    dpg.add_input_float(tag=key, default_value=params[key], step=increments[key], callback=update_parameters)
+                    dpg.add_input_float(tag=f"inc_{key}", default_value=increments[key], callback=update_increments)
+    dpg.add_input_text(label="Red Pitaya IP", tag="rp_ip", default_value=params["rp_ip"])
     dpg.add_button(label="Deploy to Red Pitaya", callback=deploy_waveform)
     dpg.add_text("", tag="status_text")
     with dpg.plot(label="Waveform Plot", height=300, width=500):
@@ -88,12 +113,14 @@ with dpg.window(label="Waveform Generator", width=700, height=600):
         dpg.set_axis_limits_auto("y_axis")
     dpg.add_button(label="Zoom In", callback=lambda: (
         dpg.set_axis_limits("x_axis", *[lim * 0.8 for lim in dpg.get_axis_limits("x_axis")]),
-        dpg.set_axis_limits("y_axis", *[lim * 0.8 for lim in dpg.get_axis_limits("y_axis")])))
+        dpg.set_axis_limits("y_axis", *[lim * 0.8 for lim in dpg.get_axis_limits("y_axis")])
+    ))
     dpg.add_button(label="Zoom Out", callback=lambda: (
         dpg.set_axis_limits("x_axis", *[lim * 1.2 for lim in dpg.get_axis_limits("x_axis")]),
-        dpg.set_axis_limits("y_axis", *[lim * 1.2 for lim in dpg.get_axis_limits("y_axis")])))
+        dpg.set_axis_limits("y_axis", *[lim * 1.2 for lim in dpg.get_axis_limits("y_axis")])
+    ))
 
-dpg.create_viewport(title='Red Pitaya Waveform Editor', width=700, height=600)
+dpg.create_viewport(title='Red Pitaya Waveform Editor', width=1000, height=800)
 dpg.setup_dearpygui()
 dpg.show_viewport()
 dpg.start_dearpygui()
