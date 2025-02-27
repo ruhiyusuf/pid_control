@@ -7,16 +7,19 @@ import time
 params = {
     "v_start": 0.0,
     "v_end": 1.0,
-    "v_down_end": 1.0,
+    "v_down_end": 0.8,
     "start_v_ms": 20.0,
-    "slope_up_ms": 6.0,
-    "slope_down_ms": 0.0,
+    "slope_up_ms": 20.0,
+    "slope_down_ms": 40.0,
     "end_v_ms": 5000.0,
     "rp_ip": "rp-f0cbc6.local"
 }
 
 # Default increments for each parameter
 increments = {key: 0.1 for key in params if key != "rp_ip"}
+
+# Axis limits for zooming
+y_min, y_max = -0.2, 1.2  # Default y-axis limits
 
 def generate_waveform():
     start_v_seconds = params["start_v_ms"] / 1000
@@ -44,8 +47,8 @@ def generate_waveform():
 def plot_waveform():
     t_waveform, waveform, _ = generate_waveform()
     dpg.set_value("waveform_plot", [t_waveform, waveform])
-    dpg.set_axis_limits_auto("x_axis")
-    dpg.set_axis_limits_auto("y_axis")
+    dpg.set_axis_limits_auto("x_axis")  # Keep x-axis auto-scaling
+    dpg.set_axis_limits("y_axis", y_min, y_max)  # Use manually set y-limits
 
 def deploy_waveform():
     try:
@@ -64,6 +67,23 @@ def deploy_waveform():
         dpg.set_value("status_text", "Error: Red Pitaya not reachable. Make sure it is properly connected, and wait 20-30s and retry.")
         print("OSError:", e)
 
+def zoom_in():
+    """ Zoom in by decreasing the range of the y-axis """
+    global y_min, y_max
+    center = (y_max + y_min) / 2
+    zoom_factor = 0.8  # 20% zoom in
+    new_range = (y_max - y_min) * zoom_factor / 2
+    y_min, y_max = center - new_range, center + new_range
+    dpg.set_axis_limits("y_axis", y_min, y_max)
+
+def zoom_out():
+    """ Zoom out by increasing the range of the y-axis """
+    global y_min, y_max
+    center = (y_max + y_min) / 2
+    zoom_factor = 1.25  # 25% zoom out
+    new_range = (y_max - y_min) * zoom_factor / 2
+    y_min, y_max = center - new_range, center + new_range
+
 def update_parameters():
     for key in params:
         if key == "rp_ip":
@@ -73,15 +93,27 @@ def update_parameters():
     plot_waveform()
     deploy_waveform()  # Auto-deploy whenever parameters are updated
 
+def update_parameters():
+    for key in params:
+        if key == "rp_ip":
+            params[key] = dpg.get_value(key)
+        else:
+            params[key] = float(dpg.get_value(key))  # Get the new value
+    plot_waveform()
+    deploy_waveform()
+
 def update_increments():
     for key in increments:
         increments[key] = float(dpg.get_value(f"inc_{key}"))
-        dpg.configure_item(key, step=increments[key])
+        dpg.configure_item(key, step=increments[key])   
+
+
+# dpg.set_axis_limits("y_axis", y_min, y_max)
 
 dpg.create_context()
 dpg.set_global_font_scale(1.2)
 
-with dpg.window(label="Waveform Generator", width=1000, height=800):
+with dpg.window(label="Waveform Generator", width=1000, height=800):    
     with dpg.collapsing_header(label="Voltage Values"):
         with dpg.table(header_row=True):
             dpg.add_table_column(label="Parameter")
@@ -104,13 +136,24 @@ with dpg.window(label="Waveform Generator", width=1000, height=800):
                     dpg.add_input_float(tag=f"inc_{key}", default_value=increments[key], callback=update_increments)
     dpg.add_input_text(label="Red Pitaya IP", tag="rp_ip", default_value=params["rp_ip"], callback=update_parameters)
     dpg.add_text("", tag="status_text")
+
     with dpg.plot(label="Waveform Plot", height=300, width=500):
         dpg.add_plot_axis(dpg.mvXAxis, label="Time (s)", tag="x_axis")
         dpg.add_plot_axis(dpg.mvYAxis, label="Amplitude", tag="y_axis")
         dpg.add_line_series([], [], parent="y_axis", tag="waveform_plot")
         dpg.add_plot_legend()
         dpg.set_axis_limits_auto("x_axis")
-        dpg.set_axis_limits_auto("y_axis")
+        dpg.set_axis_limits("y_axis", y_min, y_max)
+
+    # Add Zoom In and Zoom Out buttons
+    dpg.add_button(label="Zoom In", callback=lambda: (
+        dpg.set_axis_limits("x_axis", *[lim * 0.8 for lim in dpg.get_axis_limits("x_axis")]),
+        dpg.set_axis_limits("y_axis", *[lim * 0.8 for lim in dpg.get_axis_limits("y_axis")])
+    ))
+    dpg.add_button(label="Zoom Out", callback=lambda: (
+        dpg.set_axis_limits("x_axis", *[lim * 1.2 for lim in dpg.get_axis_limits("x_axis")]),
+        dpg.set_axis_limits("y_axis", *[lim * 1.2 for lim in dpg.get_axis_limits("y_axis")])
+    ))  
 
 dpg.create_viewport(title='Red Pitaya Waveform Editor', width=1000, height=800)
 dpg.setup_dearpygui()
