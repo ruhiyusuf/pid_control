@@ -70,15 +70,19 @@ end_v_ms = 500  # Duration at the end voltage
 ### Starting Red Pitaya SCPI Server at Boot
 To ensure the SCPI server starts automatically at boot, follow these steps:
 1. Connect to your Red Pitaya via SSH.
-2. Stop the Nginx service to prevent conflicts:
+   ```bash
+   ssh root@rp-f<---->.local
+   password: root
+   ```
+3. Stop the Nginx service to prevent conflicts:
    ```bash
    systemctl stop redpitaya_nginx
    ```
-3. Start the SCPI server manually:
+4. Start the SCPI server manually:
    ```bash
    systemctl start redpitaya_scpi &
    ```
-4. To enable SCPI at boot and disable Nginx, run:
+5. To enable SCPI at boot and disable Nginx, run:
    ```bash
    systemctl disable redpitaya_nginx
    systemctl enable redpitaya_scpi
