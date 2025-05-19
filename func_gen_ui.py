@@ -12,7 +12,8 @@ params = {
     "slope_up_ms": 20.0,
     "slope_down_ms": 40.0,
     "end_v_ms": 5000.0,
-    "rp_ip": "rp-f0cbc6.local"
+    "rp_ip": "rp-f0cbc6.local",
+    "output_channel" : 1
 }
 
 # Default increments for each parameter
@@ -20,6 +21,8 @@ increments = {key: 0.1 for key in params if key != "rp_ip"}
 
 # Axis limits for zooming
 y_min, y_max = -0.2, 1.2  # Default y-axis limits
+
+hold_value = False
 
 def generate_waveform():
     start_v_seconds = params["start_v_ms"] / 1000
@@ -32,17 +35,27 @@ def generate_waveform():
     frequency = 1 / total_time
     t_waveform = np.linspace(0, total_time, num_samples)
 
-    waveform = np.piecewise(t_waveform, 
-        [t_waveform < start_v_seconds, 
-         (t_waveform >= start_v_seconds) & (t_waveform < start_v_seconds + slope_up_seconds), 
-         (t_waveform >= start_v_seconds + slope_up_seconds) & (t_waveform < start_v_seconds + slope_up_seconds + slope_down_seconds),
-         t_waveform >= start_v_seconds + slope_up_seconds + slope_down_seconds], 
-        [lambda t: params["v_start"],
-         lambda t: params["v_start"] + (params["v_end"] - params["v_start"]) * ((t - start_v_seconds) / slope_up_seconds) if slope_up_seconds > 0 else params["v_end"],
-         lambda t: params["v_end"] + (params["v_down_end"] - params["v_end"]) * ((t - start_v_seconds - slope_up_seconds) / slope_down_seconds) if slope_down_seconds > 0 else params["v_down_end"],
-         lambda t: params["v_down_end"]])
+    if hold_value:
+        waveform = np.full_like(t_waveform, params["v_down_end"])
+    else:
+        waveform = np.piecewise(t_waveform, 
+            [t_waveform < start_v_seconds, 
+             (t_waveform >= start_v_seconds) & (t_waveform < start_v_seconds + slope_up_seconds), 
+             (t_waveform >= start_v_seconds + slope_up_seconds) & (t_waveform < start_v_seconds + slope_up_seconds + slope_down_seconds),
+             t_waveform >= start_v_seconds + slope_up_seconds + slope_down_seconds], 
+            [lambda t: params["v_start"],
+             lambda t: params["v_start"] + (params["v_end"] - params["v_start"]) * ((t - start_v_seconds) / slope_up_seconds) if slope_up_seconds > 0 else params["v_end"],
+             lambda t: params["v_end"] + (params["v_down_end"] - params["v_end"]) * ((t - start_v_seconds - slope_up_seconds) / slope_down_seconds) if slope_down_seconds > 0 else params["v_down_end"],
+             lambda t: params["v_down_end"]])
 
     return t_waveform.tolist(), waveform.tolist(), frequency
+
+def toggle_hold_value_callback():
+    global hold_value
+    hold_value = dpg.get_value("hold_checkbox")  # Read the actual checkbox state
+    deploy_waveform()
+    status = "Holding V_Down_End value (DC flat)" if hold_value else "Waveform restored"
+    dpg.set_value("status_text", f"Toggle: {status}")
 
 def plot_waveform():
     t_waveform, waveform, _ = generate_waveform()
@@ -54,15 +67,17 @@ def deploy_waveform():
     try:
         t_waveform, waveform, frequency = generate_waveform()
         rp = scpi(params["rp_ip"])
-        rp.tx_txt("GEN:RST")
-        rp.tx_txt("SOUR1:FUNC ARBITRARY")
-        rp.tx_txt("SOUR1:TRAC:DATA:DATA " + ",".join(map(str, waveform)))
-        rp.tx_txt("SOUR1:FREQ:FIX {}".format(frequency))
-        rp.tx_txt("SOUR1:VOLT:OFFS 0")
-        rp.tx_txt("OUTPUT1:STATE ON")
-        rp.tx_txt("SOUR1:TRIG:INT")
+        ch = int(params["output_channel"])
+        assert ch in [1, 2], "Output channel must be 1 or 2"
+        # rp.tx_txt("GEN:RST")
+        rp.tx_txt(f"SOUR{ch}:FUNC ARBITRARY")
+        rp.tx_txt(f"SOUR{ch}:TRAC:DATA:DATA " + ",".join(map(str, waveform)))
+        rp.tx_txt(f"SOUR{ch}:FREQ:FIX {frequency}")
+        rp.tx_txt(f"SOUR{ch}:VOLT:OFFS 0")
+        rp.tx_txt(f"OUTPUT{ch}:STATE ON")
+        rp.tx_txt(f"SOUR{ch}:TRIG:INT")
         rp.close()
-        dpg.set_value("status_text", "Waveform deployed to Red Pitaya")
+        dpg.set_value("status_text", f"Waveform deployed to Red Pitaya (Channel {ch})")
     except OSError as e:
         dpg.set_value("status_text", "Error: Red Pitaya not reachable. Make sure it is properly connected, and wait 20-30s and retry.")
         print("OSError:", e)
@@ -88,25 +103,27 @@ def update_parameters():
     for key in params:
         if key == "rp_ip":
             params[key] = dpg.get_value(key)
+        elif key == "output_channel":
+            params[key] = int(dpg.get_value(key))  # Still allow int here
         else:
-            params[key] = float(dpg.get_value(key))
-    plot_waveform()
-    deploy_waveform()  # Auto-deploy whenever parameters are updated
-
-def update_parameters():
-    for key in params:
-        if key == "rp_ip":
-            params[key] = dpg.get_value(key)
-        else:
-            params[key] = float(dpg.get_value(key))  # Get the new value
+            value = dpg.get_value(key)
+            if key in ["start_v_ms", "slope_up_ms", "slope_down_ms", "end_v_ms"]:
+                # Clamp to 0 minimum
+                value = max(0.0, float(value)) if value is not None else 0.0
+                dpg.set_value(key, value)
+            params[key] = float(value)
     plot_waveform()
     deploy_waveform()
 
 def update_increments():
     for key in increments:
-        increments[key] = float(dpg.get_value(f"inc_{key}"))
-        dpg.configure_item(key, step=increments[key])   
-
+        raw_val = dpg.get_value(f"inc_{key}")
+        try:
+            if raw_val is not None and raw_val != "":
+                increments[key] = float(raw_val)
+                dpg.configure_item(key, step=increments[key])
+        except ValueError:
+            pass  # User is still typing or entered invalid text temporarily
 
 # dpg.set_axis_limits("y_axis", y_min, y_max)
 
@@ -114,6 +131,11 @@ dpg.create_context()
 dpg.set_global_font_scale(1.2)
 
 with dpg.window(label="Waveform Generator", width=1000, height=800):    
+    # load and save buttons
+#    with dpg.group(horizontal=True):
+#        dpg.add_button(label="Save Settings", callback=save_settings)
+#        dpg.add_button(label="Load Settings", callback=load_settings)
+
     with dpg.collapsing_header(label="Voltage Values"):
         with dpg.table(header_row=True):
             dpg.add_table_column(label="Parameter")
@@ -123,7 +145,7 @@ with dpg.window(label="Waveform Generator", width=1000, height=800):
                 with dpg.table_row():
                     dpg.add_text(key.replace("_", " ").title())
                     dpg.add_input_float(tag=key, default_value=params[key], step=increments[key], callback=update_parameters)
-                    dpg.add_input_float(tag=f"inc_{key}", default_value=increments[key], callback=update_increments)
+                    dpg.add_input_float(tag=f"inc_{key}", default_value=increments[key], callback=update_increments, on_enter=True)
     with dpg.collapsing_header(label="Duration"):
         with dpg.table(header_row=True):
             dpg.add_table_column(label="Parameter")
@@ -144,6 +166,22 @@ with dpg.window(label="Waveform Generator", width=1000, height=800):
         dpg.add_plot_legend()
         dpg.set_axis_limits_auto("x_axis")
         dpg.set_axis_limits("y_axis", y_min, y_max)
+
+    # select output channel
+    dpg.add_combo(
+        label="Output Channel",
+        items=["1", "2"],
+        default_value="1",
+        tag="output_channel",
+        width=80,
+        callback=lambda: (
+            params.update({"output_channel": int(dpg.get_value("output_channel"))}),
+            deploy_waveform()
+        )
+    )
+
+    # Add toggle button
+    dpg.add_checkbox(label="Hold V_Down_End Value", callback=lambda: toggle_hold_value_callback(), tag="hold_checkbox")
 
     # Add Zoom In and Zoom Out buttons
     dpg.add_button(label="Zoom In", callback=lambda: (
