@@ -2,6 +2,8 @@ import numpy as np
 import dearpygui.dearpygui as dpg
 from redpitaya_scpi import scpi
 import time
+import json
+import os
 
 # Default input parameters
 params = {
@@ -23,6 +25,8 @@ increments = {key: 0.1 for key in params if key != "rp_ip"}
 y_min, y_max = -0.2, 1.2  # Default y-axis limits
 
 hold_value = False
+
+SAVE_PATH = "waveform_settings.json"
 
 def generate_waveform():
     start_v_seconds = params["start_v_ms"] / 1000
@@ -125,16 +129,47 @@ def update_increments():
         except ValueError:
             pass  # User is still typing or entered invalid text temporarily
 
-# dpg.set_axis_limits("y_axis", y_min, y_max)
+def save_settings():
+    filename = dpg.get_value("filename_input") or "waveform_settings.json"
+    if not filename.endswith(".json"):
+        filename += ".json"
+    try:
+        with open(filename, "w") as f:
+            json.dump(params, f, indent=4)
+        dpg.set_value("status_text", f"Settings saved to '{filename}'")
+    except Exception as e:
+        dpg.set_value("status_text", f"Error saving: {e}")
+
+def load_settings():
+    global params
+    filename = dpg.get_value("filename_input") or "waveform_settings.json"
+    if not filename.endswith(".json"):
+        filename += ".json"
+    if os.path.exists(filename):
+        try:
+            with open(filename, "r") as f:
+                params.update(json.load(f))
+            for key in params:
+                if dpg.does_item_exist(key):
+                    dpg.set_value(key, params[key])
+            plot_waveform()
+            deploy_waveform()
+            dpg.set_value("status_text", f"Settings loaded from '{filename}'")
+        except Exception as e:
+            dpg.set_value("status_text", f"Error loading: {e}")
+    else:
+        dpg.set_value("status_text", f"File '{filename}' not found.")
 
 dpg.create_context()
 dpg.set_global_font_scale(1.2)
 
 with dpg.window(label="Waveform Generator", width=1000, height=800):    
     # load and save buttons
-#    with dpg.group(horizontal=True):
-#        dpg.add_button(label="Save Settings", callback=save_settings)
-#        dpg.add_button(label="Load Settings", callback=load_settings)
+    dpg.add_input_text(label="Save/Load Filename", tag="filename_input", default_value="waveform_settings.json", width=250)
+
+    with dpg.group(horizontal=True):
+        dpg.add_button(label="Save Settings", callback=save_settings)
+        dpg.add_button(label="Load Settings", callback=load_settings)
 
     with dpg.collapsing_header(label="Voltage Values"):
         with dpg.table(header_row=True):
