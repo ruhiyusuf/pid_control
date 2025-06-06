@@ -51,27 +51,68 @@ def generate_waveform(p, num_samples=16384):
 def generate_sweep():
     
     global full_waveform, combined_freq
-    full_waveform = []
+    full_waveform = np.array([])
+    # full_waveform = []
     total_time = 0
 
-    for i in range(STEPS):
-        alpha = i / (STEPS - 1)
-        interp_params = {
-            key: (1 - alpha) * float(waveform1_params[key]) + alpha * float(waveform2_params[key])
-            for key in waveform1_params
-            if key not in ["rp_ip", "output_channel"]
-        }
+    interp_params = waveform1_params.copy()
+    counter = 0
+    while (True):
+        counter = counter + 1
+        for key in waveform1_params:
+            
+            if key in ["rp_ip", "output_channel"]:
+                continue  # Skip keys that aren't interpolated
+
+            val1 = float(waveform1_params[key])  # Initial waveform value
+            val2 = float(waveform2_params[key])  # Final waveform value
+            # print("val1 ", val1)
+            # print("val2 ", val2)
+            
+            amt = counter * increments[key]
+            print("increments[key] ", increments[key])
+            print("counter ", counter)
+            # print("amt ", amt)
+            if (val1 != val2):
+                if (val2 > val1):
+                    if (val1 + amt) > val2:
+                        interp_val = val2
+                    else:
+                        interp_val = val1 + amt
+                else:
+                    if (val1 - amt) < val2:
+                        interp_val = val2
+
+                    else:
+                        interp_val = val1 - amt
+
+            else:
+                interp_val = val2
+            
+
+            interp_params[key] = interp_val
+            print()
+            # print("interp_val ", interp_params[key])
+            # print("waveform2_val ", waveform2_params[key])
+            print()
         _, segment, segment_time = generate_waveform(interp_params, num_samples=samples_per_step)
-        full_waveform.extend(segment)
-        total_time += segment_time
-        print(f"[{i+1}/{STEPS}] v_end={interp_params['v_end']:.3f}, v_down_end={interp_params['v_down_end']:.3f}, duration={segment_time:.3f}s")
+        print("segment time", segment_time)
+        full_waveform = np.concatenate((full_waveform, segment))
+        if (waveform2_params == interp_params) or (waveform1_params == waveform2_params):
+            break;
+#    full_waveform.extend(segment)
+    total_time += segment_time
+        # print(f"[{i+1}/{STEPS}] v_end={interp_params['v_end']:.3f}, v_down_end={interp_params['v_down_end']:.3f}, duration={segment_time:.3f}s")
 
     # === Compute Frequency for RP Playback
     combined_freq = 1 / total_time
     # Create x-axis values based on total number of samples and combined duration
     x_vals = np.linspace(0, total_time, len(full_waveform))
     dpg.set_value("sweep_plot_series", [x_vals, full_waveform])
-
+    # plt.plot(full_waveform)
+    # plt.title("Sweep waveform preview")
+    # plt.show()
+    
 def deploy_sweep():
     try:
         rp = scpi(params["rp_ip"])
@@ -80,6 +121,9 @@ def deploy_sweep():
         # rp.tx_txt("GEN:RST")
         rp.tx_txt(f"SOUR{ch}:FUNC ARBITRARY")
         rp.tx_txt(f"SOUR{ch}:TRAC:DATA:DATA " + ",".join(map(str, full_waveform)))
+        # plt.plot(full_waveform)
+        # plt.title("Sweep waveform preview")
+        # plt.show()
         rp.tx_txt(f"SOUR{ch}:FREQ:FIX {combined_freq}")
         rp.tx_txt(f"SOUR{ch}:VOLT:OFFS 0")
         rp.tx_txt(f"OUTPUT{ch}:STATE ON")
@@ -95,6 +139,7 @@ def start_sweep():
     generate_sweep();
     # update_waveform(1);
     # update_waveform(2);    
+    update_increments()
     # plt.plot(full_waveform)
     # plt.title("Sweep waveform preview")
     # plt.show()
@@ -132,6 +177,18 @@ def update_waveform(tab_id):
     else:
         dpg.set_value("plot2_series", [t, y])
 
+def update_increments():
+    global increments
+
+    for key in increments.keys():
+        widget_id = f"inc_{key}"
+        try:
+            val = dpg.get_value(widget_id)
+            if val is not None:
+                increments[key] = float(val)
+        except Exception as e:
+            print(f"[WARNING] Could not update increment for '{key}' from widget '{widget_id}': {e}")
+
 def add_inputs(tab_id, values):
     for key in params:
         if key in ["rp_ip", "output_channel"]:
@@ -143,7 +200,12 @@ def add_increment_inputs():
     for key in increments:
         with dpg.group(horizontal=True):
             dpg.add_text(f"{key}")
-            dpg.add_input_float(default_value=increments[key], tag=f"inc_{key}", width=100)
+            dpg.add_input_float(
+                default_value=increments[key],
+                tag=f"inc_{key}",
+                width=100,
+                callback=lambda *_: update_increments()
+            )
 
 # === GUI Builder ===
 def build_gui():
@@ -151,8 +213,8 @@ def build_gui():
     with dpg.window(label="Full Sweep GUI", width=1000, height=850):
         dpg.add_input_text(label="Red Pitaya IP", default_value=params["rp_ip"], tag="rp_ip")
         dpg.add_combo(label="Output Channel", items=["1", "2"], default_value="1", tag="output_channel")
-        dpg.add_button(label="Start Sweep", callback=lambda: threading.Thread(target=start_sweep).start())
-        # dpg.add_button(label="Start Sweep", callback=start_sweep)
+        # dpg.add_button(label="Start Sweep", callback=lambda: threading.Thread(target=start_sweep).start())
+        dpg.add_button(label="Start Sweep", callback=start_sweep)
         # dpg.add_button(label="Pause / Resume", callback=toggle_pause)
         # dpg.add_button(label="Stop Sweep", callback=stop_sweep)
         dpg.add_text("", tag="status_text")
