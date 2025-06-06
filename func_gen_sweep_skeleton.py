@@ -7,7 +7,7 @@ from redpitaya_scpi import scpi
 
 # === Global Parameters ===
 params = {
-    "v_start": 0.0, "v_end": 1.0, "v_down_end": 0.8,
+    "v_start": 0.0, "v_end": 1.0, "v_down_end": 1.0,
     "start_v_ms": 20.0, "slope_up_ms": 20.0, "slope_down_ms": 40.0, "end_v_ms": 500.0,
     "rp_ip": "rp-f0cbc6.local", "output_channel": 1
 }
@@ -49,69 +49,54 @@ def generate_waveform(p, num_samples=16384):
 
 # === Sweep Executor with Pause/Resume ===
 def generate_sweep():
-    
-    global full_waveform, combined_freq
-    full_waveform = np.array([])
-    # full_waveform = []
-    total_time = 0
+    global full_waveform, combined_freq    
+    segments = []
+    segment_durations = []
+    x_vals = []
+    current_time = 0
 
     interp_params = waveform1_params.copy()
     counter = 0
-    while (True):
-        counter = counter + 1
+
+    while True:
+        counter += 1
         for key in waveform1_params:
-            
             if key in ["rp_ip", "output_channel"]:
-                continue  # Skip keys that aren't interpolated
+                continue
 
-            val1 = float(waveform1_params[key])  # Initial waveform value
-            val2 = float(waveform2_params[key])  # Final waveform value
-            # print("val1 ", val1)
-            # print("val2 ", val2)
-            
+            val1 = float(waveform1_params[key])
+            val2 = float(waveform2_params[key])
             amt = counter * increments[key]
-            print("increments[key] ", increments[key])
-            print("counter ", counter)
-            # print("amt ", amt)
-            if (val1 != val2):
-                if (val2 > val1):
-                    if (val1 + amt) > val2:
-                        interp_val = val2
-                    else:
-                        interp_val = val1 + amt
+
+            if val1 != val2:
+                if val2 > val1:
+                    interp_val = val2 if (val1 + amt > val2) else val1 + amt
                 else:
-                    if (val1 - amt) < val2:
-                        interp_val = val2
-
-                    else:
-                        interp_val = val1 - amt
-
+                    interp_val = val2 if (val1 - amt < val2) else val1 - amt
             else:
                 interp_val = val2
-            
 
             interp_params[key] = interp_val
-            print()
-            # print("interp_val ", interp_params[key])
-            # print("waveform2_val ", waveform2_params[key])
-            print()
-        _, segment, segment_time = generate_waveform(interp_params, num_samples=samples_per_step)
-        print("segment time", segment_time)
-        full_waveform = np.concatenate((full_waveform, segment))
-        if (waveform2_params == interp_params) or (waveform1_params == waveform2_params):
-            break;
-#    full_waveform.extend(segment)
-    total_time += segment_time
-        # print(f"[{i+1}/{STEPS}] v_end={interp_params['v_end']:.3f}, v_down_end={interp_params['v_down_end']:.3f}, duration={segment_time:.3f}s")
 
-    # === Compute Frequency for RP Playback
+        _, segment, segment_time = generate_waveform(interp_params, num_samples=samples_per_step)
+        segments.append(segment)
+        segment_durations.append(segment_time)
+
+        # Generate actual time values for this segment
+        t_segment = np.linspace(current_time, current_time + segment_time, len(segment))
+        x_vals.extend(t_segment)
+        current_time += segment_time
+
+        if waveform2_params == interp_params:
+            break
+
+    # Combine waveform segments and compute total time
+    full_waveform = np.concatenate(segments)
+    total_time = current_time
     combined_freq = 1 / total_time
-    # Create x-axis values based on total number of samples and combined duration
-    x_vals = np.linspace(0, total_time, len(full_waveform))
-    dpg.set_value("sweep_plot_series", [x_vals, full_waveform])
-    # plt.plot(full_waveform)
-    # plt.title("Sweep waveform preview")
-    # plt.show()
+
+    # Update GUI plot
+    dpg.set_value("sweep_plot_series", [np.array(x_vals), full_waveform])
     
 def deploy_sweep():
     try:
