@@ -26,6 +26,11 @@ samples_per_step = 2048
 y_min, y_max = -0.2, 1.2
 sweep_running = False
 sweep_paused = False
+segments = []
+segment_times = []
+saved_sweep_steps = []
+segment_bounds = []
+x_vals = []
 
 # === Waveform Generator ===
 def generate_waveform(p, num_samples=16384):
@@ -49,13 +54,36 @@ def generate_waveform(p, num_samples=16384):
 
 # === Sweep Executor with Pause/Resume ===
 def generate_sweep():
-    global full_waveform, combined_freq    
-    segments = []
-    segment_durations = []
-    x_vals = []
-    current_time = 0
+    global full_waveform, combined_freq
+
+    x_vals.clear()
+    segments.clear()
+    saved_sweep_steps.clear()
+    segment_times.clear()
+    segment_bounds.clear()
+
+    # Delete previous highlight box
+    if dpg.does_item_exist("highlight_box"):
+        dpg.delete_item("highlight_box")
+
+    # Clear old waveform plot
+    dpg.set_value("sweep_plot_series", [[], []])
 
     interp_params = waveform1_params.copy()
+
+    current_time = 0
+
+    # === Generate and save the initial waveform exactly as-is ===
+    t, segment, segment_time = generate_waveform(waveform1_params, num_samples=samples_per_step)
+    segments.append(segment)
+    segment_times.append((0.0, segment_time))
+    saved_sweep_steps.append(waveform1_params.copy())
+    segment_bounds.append((0.0, segment_time, min(segment), max(segment)))
+    x_vals.extend(np.linspace(0.0, segment_time, len(segment)))
+
+    current_time = segment_time  # Start the sweep from here
+
+    # === Start the actual incremental sweep from here ===
     counter = 0
 
     while True:
@@ -79,13 +107,21 @@ def generate_sweep():
             interp_params[key] = interp_val
 
         _, segment, segment_time = generate_waveform(interp_params, num_samples=samples_per_step)
+        start_time = current_time
+        end_time = current_time + segment_time
+
         segments.append(segment)
-        segment_durations.append(segment_time)
+        segment_times.append((start_time, end_time))
+        saved_sweep_steps.append(interp_params.copy())
+
+        y_min_seg = min(segment)
+        y_max_seg = max(segment)
+        segment_bounds.append((start_time, end_time, y_min_seg, y_max_seg))
 
         # Generate actual time values for this segment
-        t_segment = np.linspace(current_time, current_time + segment_time, len(segment))
+        t_segment = np.linspace(start_time, end_time, len(segment))
         x_vals.extend(t_segment)
-        current_time += segment_time
+        current_time = end_time 
 
         if waveform2_params == interp_params:
             break
@@ -244,6 +280,87 @@ def add_increment_inputs():
                 dpg.add_button(label="-", width=20, height=20, callback=make_step_button(key, -0.01))
                 dpg.add_button(label="+", width=20, height=20, callback=make_step_button(key, +0.01))
 
+def on_sweep_select(sender, app_data):
+    x1, x2 = app_data  # x range of selected region
+    print(f"Selected x range: {x1:.3f} to {x2:.3f}")
+
+    # Search through the saved segments
+    current_time = 0
+    for i, segment in enumerate(saved_sweep_steps):  # make sure you saved them earlier
+        _, _, seg_duration = generate_waveform(segment)
+        if current_time <= x1 <= x2 <= current_time + seg_duration:
+            # Match found
+            lines = [f"{k}: {v:.3f}" for k, v in segment.items() if k not in ["rp_ip", "output_channel"]]
+            dpg.set_value("waveform_output_text", "\n".join(lines))
+            break
+        current_time += seg_duration
+
+def hover_plot_tracker():
+    if dpg.is_item_hovered("sweep_plot_series"):
+        mouse_pos = dpg.get_mouse_pos(local=False)
+        plot_x, _ = dpg.get_plot_mouse_pos()
+
+        # Find which segment it falls into
+        for i, (start, end) in enumerate(segment_times):
+            if start <= plot_x <= end:
+                seg = saved_sweep_steps[i]
+                lines = [f"{k}: {v:.3f}" for k, v in seg.items() if k not in ["rp_ip", "output_channel"]]
+                dpg.set_value("waveform_output_text", "\n".join(lines))
+                return
+
+    # If not hovering or outside bounds
+    dpg.set_value("waveform_output_text", "")
+
+def update_hover_info():
+    plot_x, _ = dpg.get_plot_mouse_pos()
+    for i, (start, end) in enumerate(segment_times):
+        if start <= plot_x <= end:
+            seg = saved_sweep_steps[i]
+            lines = [f"{k}: {v:.3f}" for k, v in seg.items() if k not in ["rp_ip", "output_channel"]]
+            dpg.set_value("waveform_output_text", "\n".join(lines))
+            return
+    dpg.set_value("waveform_output_text", "")  # Clear if not hovering
+
+def on_left_click():
+    if dpg.is_item_hovered("sweep_plot"):
+        plot_x, plot_y = dpg.get_plot_mouse_pos()
+        for i, (x_start, x_end, y_min, y_max) in enumerate(segment_bounds):
+            if x_start <= plot_x <= x_end and y_min - 0.05 <= plot_y <= y_max + 0.05:  # buffer
+                seg = saved_sweep_steps[i]
+                lines = [f"{k}: {v:.3f}" for k, v in seg.items() if k not in ["rp_ip", "output_channel"]]
+                dpg.set_value("waveform_output_text", "\n".join(lines))
+                highlight_segment(i, x_start, x_end, y_min, y_max)
+                return
+
+        dpg.set_value("waveform_output_text", "Clicked outside waveform.")
+
+def on_plot_clicked(sender, app_data, user_data):
+    if dpg.is_item_clicked("sweep_plot_series", button=dpg.mvMouseButton_Left):
+        plot_x, _ = dpg.get_plot_mouse_pos()
+        for i, (start, end) in enumerate(segment_times):
+            if start <= plot_x <= end:
+                seg = saved_sweep_steps[i]
+                lines = [f"{k}: {v:.3f}" for k, v in seg.items() if k not in ["rp_ip", "output_channel"]]
+                dpg.set_value("waveform_output_text", "\n".join(lines))
+                return
+        dpg.set_value("waveform_output_text", "Clicked outside segment range.")
+
+def highlight_segment(index, x_start, x_end, y_min, y_max):
+    # Delete any existing highlight box
+    if dpg.does_item_exist("highlight_box"):
+        dpg.delete_item("highlight_box")
+
+    margin = 0.02  # Small vertical margin for clarity
+
+    # Create a new draw layer with just a bordered box (no fill)
+    with dpg.draw_layer(parent="sweep_plot", tag="highlight_box"):
+        dpg.draw_rectangle(
+            pmin=(x_start, y_min - margin),
+            pmax=(x_end, y_max + margin),
+            color=(128, 0, 255, 180),  # Light purple border
+            thickness=0.005
+        )
+
 # === GUI Builder ===
 def build_gui():
     dpg.create_context()
@@ -277,11 +394,21 @@ def build_gui():
                     dpg.set_axis_limits("axis2", y_min, y_max)
 
             with dpg.tab(label="Sweep Visual"):
-                with dpg.plot(label="Sweep Preview", height=300, width=900):
-                    dpg.add_plot_axis(dpg.mvXAxis)
-                    dpg.add_plot_axis(dpg.mvYAxis, tag="axis_sweep")
-                    dpg.add_line_series([], [], parent="axis_sweep", tag="sweep_plot_series")
-                    dpg.set_axis_limits("axis_sweep", y_min, y_max)
+                with dpg.group():
+                    with dpg.plot(label="Sweep Preview", height=300, width=900, tag="sweep_plot"):
+                        dpg.add_plot_axis(dpg.mvXAxis, tag="x_axis_sweep")
+                        dpg.add_plot_axis(dpg.mvYAxis, tag="axis_sweep")
+                        dpg.add_line_series([], [], parent="axis_sweep", tag="sweep_plot_series")
+                        dpg.set_axis_limits("axis_sweep", y_min, y_max)
+                        dpg.draw_layer(parent="sweep_plot", tag="highlight_box")  # For drawing the highlight
+
+                    # Add text display for clicked info
+                    dpg.add_text("Clicked Waveform Info:", tag="waveform_output_header")
+                    dpg.add_text("", tag="waveform_output_text")
+
+                    # Add the click handler
+                    with dpg.handler_registry():
+                        dpg.add_mouse_click_handler(callback=lambda: on_left_click())
 
     dpg.create_viewport(title='Waveform Sweep GUI (Pause/Resume/Live)', width=1000, height=850)
     dpg.setup_dearpygui()
