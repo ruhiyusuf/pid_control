@@ -175,22 +175,74 @@ def update_increments():
             print(f"[WARNING] Could not update increment for '{key}' from widget '{widget_id}': {e}")
 
 def add_inputs(tab_id, values):
-    for key in params:
-        if key in ["rp_ip", "output_channel"]:
-            continue
-        dpg.add_input_float(label=key, default_value=values[key], tag=f"{key}_{tab_id}",
-                            callback=lambda s, a, u: update_waveform(tab_id))
+    with dpg.table(header_row=False, borders_innerV=True, borders_innerH=True):
+        # Outer table has two columns: voltage and timing
+        dpg.add_table_column(init_width_or_weight=100)
+        dpg.add_table_column(init_width_or_weight=100)
+
+        with dpg.table_row():
+            # === Voltage Table ===
+            with dpg.group():
+                with dpg.table(header_row=False, borders_innerV=True):
+                    dpg.add_table_column(init_width_or_weight=60)
+                    dpg.add_table_column(init_width_or_weight=60)
+                    with dpg.table_row():
+                        dpg.add_text("Voltage Values")
+                    for key in ["v_start", "v_end", "v_down_end"]:
+                        with dpg.table_row():
+                            dpg.add_text(f"{key}:")
+                            dpg.add_input_float(
+                                default_value=values[key],
+                                tag=f"{key}_{tab_id}",
+                                width=100,
+                                callback=lambda s, a, u=key: update_waveform(tab_id),
+                                format="%.3f"
+                            )
+
+            # === Timing Table ===
+            with dpg.group():
+                with dpg.table(header_row=False, borders_innerV=True):
+                    dpg.add_table_column(init_width_or_weight=30)
+                    dpg.add_table_column(init_width_or_weight=30)
+                    with dpg.table_row():
+                        dpg.add_text("Timing Parameters")
+                    for key in ["start_v_ms", "slope_up_ms", "slope_down_ms", "end_v_ms"]:
+                        with dpg.table_row():
+                            dpg.add_text(f"{key}:")
+                            dpg.add_input_float(
+                                default_value=values[key],
+                                tag=f"{key}_{tab_id}",
+                                width=100,
+                                callback=lambda s, a, u=key: update_waveform(tab_id),
+                                format="%.3f"
+                            )
 
 def add_increment_inputs():
-    for key in increments:
-        with dpg.group(horizontal=True):
-            dpg.add_text(f"{key}")
-            dpg.add_input_float(
-                default_value=increments[key],
-                tag=f"inc_{key}",
-                width=100,
-                callback=lambda *_: update_increments()
-            )
+    def make_step_button(key, delta):
+        return lambda: (
+            dpg.set_value(f"inc_{key}", round(float(dpg.get_value(f"inc_{key}") or 0) + delta, 6)),
+            update_increments()
+        )
+
+    with dpg.table(header_row=False, borders_innerV=True, borders_innerH=True):
+        dpg.add_table_column(init_width_or_weight=20)   # Label
+        dpg.add_table_column(init_width_or_weight=15)   # Input
+        dpg.add_table_column(init_width_or_weight=5)   # Minus
+        dpg.add_table_column(init_width_or_weight=80)   # Plus
+
+        for key in increments.keys():
+            with dpg.table_row():
+                dpg.add_text(f"{key}:", wrap=0)
+                dpg.add_input_float(
+                    tag=f"inc_{key}",
+                    default_value=increments[key],
+                    width=60,
+                    step=0.0,  # disables built-in +/- buttons
+                    callback=update_increments,
+                    format="%.3f"
+                )
+                dpg.add_button(label="-", width=20, height=20, callback=make_step_button(key, -0.01))
+                dpg.add_button(label="+", width=20, height=20, callback=make_step_button(key, +0.01))
 
 # === GUI Builder ===
 def build_gui():
