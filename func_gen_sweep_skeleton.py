@@ -4,6 +4,7 @@ import time
 import threading
 import dearpygui.dearpygui as dpg
 from redpitaya_scpi import scpi
+from scipy.interpolate import interp1d
 
 # === Global Parameters ===
 params = {
@@ -22,7 +23,7 @@ increments = {
 sweep_keys = list(increments.keys())
 # need to change
 STEPS = 6
-samples_per_step = 2048
+samples_per_step = 2048 
 y_min, y_max = -0.2, 1.2
 sweep_running = False
 sweep_paused = False
@@ -31,6 +32,8 @@ segment_times = []
 saved_sweep_steps = []
 segment_bounds = []
 x_vals = []
+x_vals_resampled = []
+y_vals_resampled = []
 
 # === Waveform Generator ===
 def generate_waveform(p, num_samples=16384):
@@ -61,6 +64,8 @@ def generate_sweep():
     saved_sweep_steps.clear()
     segment_times.clear()
     segment_bounds.clear()
+    x_vals_resampled.clear()
+    y_vals_resampled.clear()
 
     # Delete previous highlight box
     if dpg.does_item_exist("highlight_box"):
@@ -74,7 +79,8 @@ def generate_sweep():
     current_time = 0
 
     # === Generate and save the initial waveform exactly as-is ===
-    t, segment, segment_time = generate_waveform(waveform1_params, num_samples=samples_per_step)
+    t, segment, segment_time = generate_waveform(waveform1_params,
+                                                 num_samples=samples_per_step)
     segments.append(segment)
     segment_times.append((0.0, segment_time))
     saved_sweep_steps.append(waveform1_params.copy())
@@ -106,7 +112,8 @@ def generate_sweep():
 
             interp_params[key] = interp_val
 
-        _, segment, segment_time = generate_waveform(interp_params, num_samples=samples_per_step)
+        _, segment, segment_time = generate_waveform(interp_params,
+                                                     num_samples=samples_per_step)
         start_time = current_time
         end_time = current_time + segment_time
 
@@ -133,7 +140,29 @@ def generate_sweep():
 
     # Update GUI plot
     dpg.set_value("sweep_plot_series", [np.array(x_vals), full_waveform])
-    
+    print("full_waveform ", full_waveform)
+    print("full waveform length ", len(full_waveform))
+    print("x vals ", np.array(x_vals))
+    print("x vals length ", len(x_vals))
+
+def resample_waveform_to_uniform_time(x_vals, y_vals, num_points=16384):
+    total_time = x_vals[-1] - x_vals[0]
+    new_x = np.linspace(x_vals[0], x_vals[-1], num_points)
+    interpolator = interp1d(x_vals, y_vals, kind='linear')
+    new_y = interpolator(new_x)
+    return new_x, new_y, total_time   
+
+def get_frequency_from_params(p, full_cycle=True):
+    total_duration = (p["start_v_ms"] +
+                      p["slope_up_ms"] +
+                      p["slope_down_ms"] +
+                      p["end_v_ms"]) / 1000  # ms → s
+
+    if full_cycle:
+        return 1 / (2 * total_duration) if total_duration > 0 else 0
+    else:
+        return 1 / total_duration if total_duration > 0 else 0
+
 def deploy_sweep():
     try:
         rp = scpi(params["rp_ip"])
@@ -141,10 +170,13 @@ def deploy_sweep():
         assert ch in [1, 2], "Output channel must be 1 or 2"
         # rp.tx_txt("GEN:RST")
         rp.tx_txt(f"SOUR{ch}:FUNC ARBITRARY")
-        rp.tx_txt(f"SOUR{ch}:TRAC:DATA:DATA " + ",".join(map(str, full_waveform)))
-        # plt.plot(full_waveform)
+
+        x_vals_resampled, y_vals_resampled, total_time = resample_waveform_to_uniform_time(np.array(x_vals), full_waveform)
+        rp.tx_txt(f"SOUR{ch}:TRAC:DATA:DATA " + ",".join(map(str, y_vals_resampled)))
+        # plt.plot(x_vals, full_waveform)
         # plt.title("Sweep waveform preview")
         # plt.show()
+
         rp.tx_txt(f"SOUR{ch}:FREQ:FIX {combined_freq}")
         rp.tx_txt(f"SOUR{ch}:VOLT:OFFS 0")
         rp.tx_txt(f"OUTPUT{ch}:STATE ON")
@@ -158,8 +190,8 @@ def deploy_sweep():
 def start_sweep():
     print("im here in start_sweep")
     generate_sweep();
-    # update_waveform(1);
-    # update_waveform(2);    
+    update_waveform(1);
+    update_waveform(2);    
     update_increments()
     # plt.plot(full_waveform)
     # plt.title("Sweep waveform preview")
