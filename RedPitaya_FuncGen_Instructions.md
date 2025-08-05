@@ -104,3 +104,8 @@ To ensure the SCPI server starts automatically at boot, follow these steps:
   ```bash
   ping rp-f0cbc6.local
   ```
+- If you are not receiving any output or output is noisy, check for calibration. To calibrate to default values run this command once you're sshed into the Red Pitaya:
+  ```bash
+  calib -dn
+  reboot
+  ```
