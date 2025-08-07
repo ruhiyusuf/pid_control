@@ -193,6 +193,13 @@ def start_sweep():
     # plt.title("Sweep waveform preview")
     # plt.show()
     print("entering deploy sweep")
+    try:
+        params["rp_ip"] = dpg.get_value("rp_ip")
+        params["output_channel"] = int(dpg.get_value("output_channel"))
+    except Exception as e:
+        print(f"[ERROR] Failed to read IP or output channel from GUI: {e}")
+        dpg.set_value("status_text", "Invalid Red Pitaya IP or output channel.")
+        return
     deploy_sweep();
 
 def toggle_pause():
